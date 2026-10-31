@@ -8,3 +8,7 @@ node_modules/
 .env
 test-results/
 playwright-report/
+StrykerOutput/
+node_modules/
+e2e/test-results/
+e2e/playwright-report/

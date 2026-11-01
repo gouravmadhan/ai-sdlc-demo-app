@@ -1,0 +1,2 @@
+[     360ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5000/favicon.ico:0
+[  172282ms] [ERROR] Failed to load resource: the server responded with a status of 409 (Conflict) @ http://localhost:5000/api/approvals/INV-1006/approve:0

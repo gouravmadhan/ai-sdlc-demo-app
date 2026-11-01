@@ -1,7 +1,8 @@
 namespace InvoiceApp.Domain;
 
 /// <summary>
-/// Moves an invoice through its lifecycle and applies role-aware approval rules.
+/// Moves an invoice through its lifecycle: Draft -> PendingApproval -> Approved or Rejected.
+/// One invoice at a time, decided as a whole by a single approver.
 /// </summary>
 public class ApprovalService
 {

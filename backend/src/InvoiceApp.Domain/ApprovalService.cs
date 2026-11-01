@@ -1,8 +1,7 @@
 namespace InvoiceApp.Domain;
 
 /// <summary>
-/// Moves an invoice through its lifecycle: Draft -> PendingApproval -> Approved or Rejected.
-/// One invoice at a time, decided as a whole by a single approver.
+/// Moves an invoice through its lifecycle and applies role-aware approval rules.
 /// </summary>
 public class ApprovalService
 {
@@ -10,6 +9,7 @@ public class ApprovalService
     public const decimal DirectorApprovalLimit = 500_000m;
 
     private readonly IInvoiceRepository _repository;
+    private readonly object _approvalLock = new();
 
     public ApprovalService(IInvoiceRepository repository)
     {
@@ -33,14 +33,26 @@ public class ApprovalService
 
     public Invoice Approve(string invoiceId, string userId, string role)
     {
-        var invoice = Find(invoiceId);
-        ValidateApproval(invoice, role);
+        lock (_approvalLock)
+        {
+            var invoice = Find(invoiceId);
+            ValidateApproval(invoice, userId, role);
 
-        invoice.Status = InvoiceStatus.Approved;
-        invoice.DecidedBy = userId;
-        invoice.DecidedAt = DateTime.UtcNow;
-        _repository.Update(invoice);
-        return invoice;
+            var normalizedUserId = userId.Trim();
+            var approvedAt = DateTime.UtcNow;
+            var updatedInvoice = Copy(invoice);
+            updatedInvoice.Approvals.Add(new InvoiceApproval(normalizedUserId, role, approvedAt));
+            updatedInvoice.DecidedBy = normalizedUserId;
+            updatedInvoice.DecidedAt = approvedAt;
+
+            if (invoice.Amount <= DirectorApprovalLimit || invoice.Approvals.Count > 0)
+            {
+                updatedInvoice.Status = InvoiceStatus.Approved;
+            }
+
+            _repository.Update(updatedInvoice);
+            return updatedInvoice;
+        }
     }
 
     public Invoice Reject(string invoiceId, string approver, string reason)
@@ -74,7 +86,7 @@ public class ApprovalService
         }
     }
 
-    private static void ValidateApproval(Invoice invoice, string role)
+    private static void ValidateApproval(Invoice invoice, string userId, string role)
     {
         if (role is not ("Manager" or "Director"))
         {
@@ -89,7 +101,28 @@ public class ApprovalService
 
         if (invoice.Amount > DirectorApprovalLimit)
         {
-            throw new InvalidOperationException("Invoices above 500,000 require two approvers");
+            if (invoice.Approvals.Count > 0 &&
+                invoice.Approvals.Any(approval =>
+                    string.Equals(
+                        approval.ApproverId,
+                        userId.Trim(),
+                        StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException("Same user cannot approve twice");
+            }
+
+            if (invoice.Approvals.Count > 0 && role != "Director")
+            {
+                throw new InvalidOperationException("Second approver must be a Director");
+            }
+
+            if (invoice.Approvals.Count > 1)
+            {
+                throw new InvalidOperationException(
+                    $"Invoice {invoice.Id} already has two approvals.");
+            }
+
+            return;
         }
 
         if (role == "Manager" && invoice.Amount > ManagerApprovalLimit)
@@ -97,4 +130,18 @@ public class ApprovalService
             throw new InvalidOperationException("Manager limit is 50,000");
         }
     }
+
+    private static Invoice Copy(Invoice invoice) =>
+        new()
+        {
+            Id = invoice.Id,
+            CustomerName = invoice.CustomerName,
+            Amount = invoice.Amount,
+            Status = invoice.Status,
+            CreatedAt = invoice.CreatedAt,
+            Approvals = invoice.Approvals.ToList(),
+            DecidedBy = invoice.DecidedBy,
+            DecidedAt = invoice.DecidedAt,
+            DecisionNote = invoice.DecisionNote
+        };
 }

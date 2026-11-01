@@ -12,7 +12,7 @@ builder.Services
 builder.Services.Configure<DemoUsersOptions>(builder.Configuration);
 builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddSingleton<IInvoiceRepository, InMemoryInvoiceRepository>();
-builder.Services.AddScoped<ApprovalService>();
+builder.Services.AddSingleton<ApprovalService>();
 
 var app = builder.Build();
 

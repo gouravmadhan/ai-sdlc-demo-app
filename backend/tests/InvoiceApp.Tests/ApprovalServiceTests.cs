@@ -29,6 +29,34 @@ public class ApprovalServiceTests
     private static ApprovalService ServiceFor(params Invoice[] invoices) =>
         new(new FakeInvoiceRepository(invoices));
 
+    private sealed class UpdateRecordingInvoiceRepository : IInvoiceRepository
+    {
+        private readonly FakeInvoiceRepository _inner;
+
+        public UpdateRecordingInvoiceRepository(params Invoice[] invoices)
+        {
+            _inner = new FakeInvoiceRepository(invoices);
+        }
+
+        public List<Invoice> UpdatedInvoices { get; } = new();
+
+        public IReadOnlyList<Invoice> GetAll() => _inner.GetAll();
+
+        public Invoice? GetById(string id) => _inner.GetById(id);
+
+        public IReadOnlyList<Invoice> GetByIds(IEnumerable<string> ids) => _inner.GetByIds(ids);
+
+        public Invoice Add(Invoice invoice) => _inner.Add(invoice);
+
+        public void Update(Invoice invoice)
+        {
+            UpdatedInvoices.Add(invoice);
+            _inner.Update(invoice);
+        }
+
+        public bool Remove(string id) => _inner.Remove(id);
+    }
+
     private sealed record InvoiceSnapshot(
         string Id,
         string CustomerName,
@@ -63,10 +91,13 @@ public class ApprovalServiceTests
     public void Submit_MovesDraftToPendingApproval()
     {
         var invoice = InvoiceWith("INV-1", InvoiceStatus.Draft);
+        var repository = new UpdateRecordingInvoiceRepository(invoice);
+        var service = new ApprovalService(repository);
 
-        var result = ServiceFor(invoice).Submit("INV-1");
+        var result = service.Submit("INV-1");
 
         Assert.Equal(InvoiceStatus.PendingApproval, result.Status);
+        Assert.Equal(new[] { invoice }, repository.UpdatedInvoices);
     }
 
     [Fact]
@@ -77,9 +108,19 @@ public class ApprovalServiceTests
         var service = new ApprovalService(repository);
         var before = Capture(repository.GetById("INV-1")!);
 
-        Assert.Throws<InvalidOperationException>(() => service.Submit("INV-1"));
+        var exception = Assert.Throws<InvalidOperationException>(() => service.Submit("INV-1"));
 
+        Assert.Equal("Invoice INV-1 is Approved; only drafts can be submitted.", exception.Message);
         Assert.Equal(before, Capture(repository.GetById("INV-1")!));
+    }
+
+    [Fact]
+    public void Invoice_DefaultsIdAndCustomerNameToEmptyStrings()
+    {
+        var invoice = new Invoice();
+
+        Assert.Equal(string.Empty, invoice.Id);
+        Assert.Equal(string.Empty, invoice.CustomerName);
     }
 
     [Fact]
@@ -87,7 +128,8 @@ public class ApprovalServiceTests
     {
         var invoice = PendingInvoiceWithoutDecision("INV-1");
         invoice.Amount = 50_000m;
-        var service = ServiceFor(invoice);
+        var repository = new UpdateRecordingInvoiceRepository(invoice);
+        var service = new ApprovalService(repository);
         var beforeApproval = DateTime.UtcNow;
 
         var result = service.Approve("INV-1", "demo.manager", "Manager");
@@ -97,6 +139,7 @@ public class ApprovalServiceTests
         Assert.Equal("demo.manager", result.DecidedBy);
         Assert.NotNull(result.DecidedAt);
         Assert.InRange(result.DecidedAt.Value, beforeApproval, afterApproval);
+        Assert.Equal(new[] { invoice }, repository.UpdatedInvoices);
     }
 
     [Fact]
@@ -176,18 +219,39 @@ public class ApprovalServiceTests
     {
         var service = ServiceFor();
 
-        Assert.Throws<KeyNotFoundException>(() => service.Approve("INV-404", "demo.manager", "Manager"));
+        var exception = Assert.Throws<KeyNotFoundException>(
+            () => service.Approve("INV-404", "demo.manager", "Manager"));
+
+        Assert.Equal("Invoice INV-404 was not found.", exception.Message);
     }
 
     [Fact]
     public void Reject_RecordsReasonAndApprover()
     {
-        var service = ServiceFor(InvoiceWith("INV-1", InvoiceStatus.PendingApproval));
+        var invoice = InvoiceWith("INV-1", InvoiceStatus.PendingApproval);
+        var repository = new UpdateRecordingInvoiceRepository(invoice);
+        var service = new ApprovalService(repository);
 
         var result = service.Reject("INV-1", "demo.manager", "Duplicate invoice");
 
         Assert.Equal(InvoiceStatus.Rejected, result.Status);
         Assert.Equal("Duplicate invoice", result.DecisionNote);
+        Assert.Equal(new[] { invoice }, repository.UpdatedInvoices);
+    }
+
+    [Theory]
+    [InlineData(InvoiceStatus.Draft)]
+    [InlineData(InvoiceStatus.Approved)]
+    [InlineData(InvoiceStatus.Rejected)]
+    public void Reject_InvoiceNotPending_IsRejectedWithoutChangingInvoice(InvoiceStatus status)
+    {
+        var invoice = InvoiceWith("INV-1", status);
+        var repository = new FakeInvoiceRepository(invoice);
+        var service = new ApprovalService(repository);
+
+        AssertRejectedWithoutChanges(repository, invoice,
+            () => service.Reject("INV-1", "demo.manager", "Duplicate invoice"),
+            $"Invoice INV-1 is {status}; only pending invoices can be decided.");
     }
 
     [Fact]
@@ -198,8 +262,10 @@ public class ApprovalServiceTests
         var service = new ApprovalService(repository);
         var before = Capture(repository.GetById("INV-1")!);
 
-        Assert.Throws<ArgumentException>(() => service.Reject("INV-1", "demo.manager", "  "));
+        var exception = Assert.Throws<ArgumentException>(
+            () => service.Reject("INV-1", "demo.manager", "  "));
 
+        Assert.Equal("A reason is required to reject an invoice. (Parameter 'reason')", exception.Message);
         Assert.Equal(before, Capture(repository.GetById("INV-1")!));
     }
 }

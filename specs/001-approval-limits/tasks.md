@@ -60,8 +60,8 @@ starting A2.
 
 ### A2: Playwright rejection test
 
-- [ ] T006 [P] [US3] Add Playwright configuration and reusable sign-in/invoice page objects using accessible role and label locators in `e2e/playwright.config.ts` and `e2e/pages/invoice-approval.page.ts`. Reuse existing page objects where they exist. Agent: `implementer`.
-- [ ] T007 [US3] Add exactly one Playwright test that creates and submits a 50,001 invoice, signs in as `demo.manager`, attempts approval, and asserts the visible Manager-limit reason and unchanged PendingApproval status in `e2e/tests/rejected-over-limit-approval.spec.ts`. If the UI in `backend/src/InvoiceApp.Api/wwwroot/` does not display the API `error` message on rejection, make the smallest change needed to show it. Agent: `implementer`.
+- [x] T006 [P] [US3] Add Playwright configuration and reusable sign-in/invoice page objects using accessible role and label locators in `e2e/playwright.config.ts` and `e2e/pages/invoice-approval.page.ts`. Reuse existing page objects where they exist. Agent: `implementer`.
+- [x] T007 [US3] Add exactly one Playwright test that creates and submits a 50,001 invoice, signs in as `demo.manager`, attempts approval, and asserts the visible Manager-limit reason and unchanged PendingApproval status in `e2e/tests/rejected-over-limit-approval.spec.ts`. If the UI in `backend/src/InvoiceApp.Api/wwwroot/` does not display the API `error` message on rejection, make the smallest change needed to show it. Agent: `implementer`.
 - [ ] T008 Run `dotnet test backend/InvoiceApp.sln` and `npm test` from `e2e` (use `npx playwright test --headed` once to watch it). Run `dotnet stryker` from `backend/tests/InvoiceApp.Tests`; kill or explain surviving approval-rule mutants and commit any added tests. Stage and commit `e2e/playwright.config.ts`, `e2e/pages/invoice-approval.page.ts`, `e2e/tests/rejected-over-limit-approval.spec.ts`, and any `wwwroot` change with a message explaining that the Manager rejection is verified through the UI.
 
 **Phase A checkpoint**: Single-approver boundaries, role authorization, rejection

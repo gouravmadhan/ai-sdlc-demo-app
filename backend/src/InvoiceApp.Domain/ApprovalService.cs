@@ -6,6 +6,9 @@ namespace InvoiceApp.Domain;
 /// </summary>
 public class ApprovalService
 {
+    public const decimal ManagerApprovalLimit = 50_000m;
+    public const decimal DirectorApprovalLimit = 500_000m;
+
     private readonly IInvoiceRepository _repository;
 
     public ApprovalService(IInvoiceRepository repository)
@@ -28,13 +31,13 @@ public class ApprovalService
         return invoice;
     }
 
-    public Invoice Approve(string invoiceId, string approver)
+    public Invoice Approve(string invoiceId, string userId, string role)
     {
         var invoice = Find(invoiceId);
-        EnsurePending(invoice);
+        ValidateApproval(invoice, role);
 
         invoice.Status = InvoiceStatus.Approved;
-        invoice.DecidedBy = approver;
+        invoice.DecidedBy = userId;
         invoice.DecidedAt = DateTime.UtcNow;
         _repository.Update(invoice);
         return invoice;
@@ -68,6 +71,30 @@ public class ApprovalService
         {
             throw new InvalidOperationException(
                 $"Invoice {invoice.Id} is {invoice.Status}; only pending invoices can be decided.");
+        }
+    }
+
+    private static void ValidateApproval(Invoice invoice, string role)
+    {
+        if (role is not ("Manager" or "Director"))
+        {
+            throw new InvalidOperationException($"Role {role} cannot approve invoices");
+        }
+
+        if (invoice.Status != InvoiceStatus.PendingApproval)
+        {
+            throw new InvalidOperationException(
+                $"Invoice {invoice.Id} is {invoice.Status}; only pending invoices can be approved.");
+        }
+
+        if (invoice.Amount > DirectorApprovalLimit)
+        {
+            throw new InvalidOperationException("Invoices above 500,000 require two approvers");
+        }
+
+        if (role == "Manager" && invoice.Amount > ManagerApprovalLimit)
+        {
+            throw new InvalidOperationException("Manager limit is 50,000");
         }
     }
 }
